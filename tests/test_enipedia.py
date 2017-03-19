@@ -5,14 +5,20 @@ from enipedia import euets
 
 
 class TestEnipediaSparql(unittest.TestCase):
+    country_code = 'NL'
+    year = 2010
 
     def test_get_country_data(self):
         print('test_get_country_data')
-        country_code = 'NL'
-        year = 2010
-        sources = euets.get_emission_sources(country_code, year)
-        filepath = euets.get_filename(country_code, year)
+        sources = euets.get_emission_sources(self.country_code, self.year)
+        self.assertEqual(len(sources), 381)
+
+    def test_write_read_csv(self):
+        sources = euets.get_emission_sources(self.country_code, self.year)
+        filepath = euets.get_filename(self.country_code, self.year)
         euets.sources_to_csv_file(sources, filepath)
+        sources_out = euets.sources_from_csv_file(filepath)
+        self.assertEqual(len(sources), len(sources_out))
 
     def test_get_country_codes(self):
         codes = euets.get_country_codes()

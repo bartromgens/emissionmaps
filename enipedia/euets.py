@@ -77,12 +77,16 @@ def get_emission_sources(country_code, year):
     return sources
 
 
+def get_sources_from_file(country_code, year):
+    filepath = get_filename(country_code, year)
+    return sources_from_csv_file(filepath)
+
+
 def get_all_sources_from_file(year):
     country_codes = get_country_codes()
     sources = []
     for code in country_codes:
-        filepath = get_filename(code, year)
-        sources += sources_from_csv_file(filepath)
+        sources += get_sources_from_file(code, year)
     print('get_all_sources_from_file: ' + str(len(sources)) + ' found')
     return sources
 
