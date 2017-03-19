@@ -3,6 +3,7 @@ from SPARQLWrapper import SPARQLWrapper, JSON
 
 ENIPEDIA_SPARQL_ENDPOINT = "http://enipedia.tudelft.nl/sparql"
 
+
 def get_filename(country_code, year):
     return 'data/eu-ets/eu-ets-emissions-{}-{}.csv'.format(country_code, year)
 
@@ -32,43 +33,48 @@ def get_emission_sources(country_code, year):
     sparql = SPARQLWrapper(ENIPEDIA_SPARQL_ENDPOINT)
     query = """
         PREFIX euets: <http://enipedia.tudelft.nl/data/EU-ETS/>
-        select distinct ?installation ?installationName ?latitude ?longitude ?calculatedEmissions ?napinfo
-        where {{
-          ?installation rdf:type euets:Installation .
-          ?installation euets:name ?installationName .
-          ?installation euets:latitude ?latitude .
-          ?installation euets:longitude ?longitude .
-          ?installation euets:napInfo ?napinfo .
-          ?napinfo euets:periodYear {} .
-          ?napinfo euets:calculatedEmissions ?calculatedEmissions .
-          ?installation euets:countryCode "{}" .
-        }}
+        SELECT ?installation ?title coalesce(?pt, concat(?lat,", ",?lon)) as ?coordinates ?calculatedEmissions ?napinfo ?enipedia_wiki
+        WHERE {{
+          GRAPH <http://enipedia.tudelft.nl/data/EU-ETS> {{
+            ?installation rdfs:label ?title .
+            ?installation euets:euetsID ?id .
+            ?installation euets:countryCode ?countryCode .
+            FILTER(?countryCode = '{}') .
+            ?installation euets:longitude ?lon .
+            ?installation euets:latitude ?lat .
+            ?installation euets:napInfo ?napinfo .
+            ?napinfo euets:periodYear ?year .
+            ?napinfo euets:calculatedEmissions ?calculatedEmissions .
+            ?napinfo euets:allowanceAllocation ?allowanceAllocation .
+            FILTER(?year = {}) .
+          }}
+          OPTIONAL {{ GRAPH <http://enipedia.tudelft.nl/wiki/> {{
+            ?enipedia_wiki prop:EU_ETS_ID ?id .
+            ?enipedia_wiki prop:Point ?pt .
+          }} }}
+        }} order by DESC(?calculatedEmissions)
     """  # double braces are there to allow .format later
-    query = query.format(year, country_code)
+    query = query.format(country_code, year)
     sparql.setQuery(query)
     sparql.setReturnFormat(JSON)
     results = sparql.query().convert()
     sources = []
     for result in results["results"]["bindings"]:
+        enipedia_wiki_url = ''
+        if 'enipedia_wiki' in result:
+            enipedia_wiki_url = result['enipedia_wiki']['value']
         source = {
-            'name': result['installationName']['value'],
-            'enipedia_url': result['installation']['value'],
-            'latitude': float(result['latitude']['value']),
-            'longitude': float(result['longitude']['value']),
+            'title': result['title']['value'],
+            'latitude': float(result['coordinates']['value'].split(',')[0]),
+            'longitude': float(result['coordinates']['value'].split(',')[1]),
             'emissions_calculated': float(result['calculatedEmissions']['value']),
+            'enipedia_url': result['installation']['value'],
+            'enipedia_wiki': enipedia_wiki_url,
             'napinfo': result['napinfo']['value'],
         }
         sources.append(source)
         # print(source)
     return sources
-
-
-def sources_to_csv_file(sources, filepath):
-    print('sources_to_csv_file: ' + filepath)
-    with open(filepath, 'w') as fileout:
-        fileout.write('installation name;calculated emission;latitude;longitude;enipedia url\n')
-        for source in sources:
-            fileout.write(source['name'].replace(';', ',') + ';' + str(source['emissions_calculated']) + ';' + str(source['latitude']) + ';' + str(source['longitude']) + ';' + source['enipedia_url'] + '\n')
 
 
 def get_all_sources_from_file(year):
@@ -81,6 +87,21 @@ def get_all_sources_from_file(year):
     return sources
 
 
+def sources_to_csv_file(sources, filepath):
+    print('sources_to_csv_file: ' + filepath)
+    with open(filepath, 'w') as fileout:
+        fileout.write('installation title;calculated emission;latitude;longitude;enipedia url;enipedia wiki url\n')
+        for source in sources:
+            fileout.write(
+                source['title'].replace(';', ',') + ';' +
+                str(source['emissions_calculated']) + ';' +
+                str(source['latitude']) + ';' +
+                str(source['longitude']) + ';' +
+                source['enipedia_url'] + ';' +
+                source['enipedia_wiki'] + '\n'
+            )
+
+
 def sources_from_csv_file(filepath):
     sources = []
     with open(filepath, 'r') as csvfile:
@@ -88,11 +109,12 @@ def sources_from_csv_file(filepath):
         next(rows)  # skip header
         for row in rows:
             source = {
-                'name': row[0],
+                'title': row[0],
                 'emissions_calculated': float(row[1]),
                 'latitude': float(row[2]),
                 'longitude': float(row[3]),
                 'enipedia_url': row[4],
+                'enipedia_wiki': row[5],
             }
             sources.append(source)
     return sources
