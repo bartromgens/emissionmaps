@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>EU-ETS emission map</title>
+    <link rel="stylesheet" href="https://openlayers.org/en/v4.0.1/css/ol.css" type="text/css">
+    <!-- The line below is only needed for old environments like Internet Explorer and Android 4.x -->
+    <script src="https://cdn.polyfill.io/v2/polyfill.min.js?features=requestAnimationFrame,Element.prototype.classList,URL"></script>
+    <script src="https://openlayers.org/en/v4.0.1/build/ol.js"></script>
+    <script src="https://mapbox.github.io/geojson-vt/geojson-vt-dev.js"></script>
+  </head>
+  <body>
+    <div id="map" class="map"></div>
+    <script>
+      var replacer = function(key, value) {
+        if (value.geometry) {
+          var type;
+          var rawType = value.type;
+          var geometry = value.geometry;
+
+          if (rawType === 1) {
+            type = geometry.length === 1 ? 'Point' : 'MultiPoint';
+          } else if (rawType === 2) {
+            type = geometry.length === 1 ? 'LineString' : 'MultiLineString';
+          } else if (rawType === 3) {
+            type = geometry.length === 1 ? 'Polygon' : 'MultiPolygon';
+          }
+
+          // console.log(geometry);
+          // console.log(value.tags)
+
+          return {
+            'type': 'Feature',
+            'geometry': {
+              'type': 'MultiLineString',
+              'coordinates': geometry.length == 1 ? geometry : geometry
+            },
+            'properties': value.tags
+          };
+        } else {
+          return value;
+        }
+      };
+
+      var tilePixels = new ol.proj.Projection({
+        code: 'TILE_PIXELS',
+        units: 'tile-pixels'
+      });
+
+      var map = new ol.Map({
+        layers: [
+          new ol.layer.Tile({
+            source: new ol.source.OSM()
+          })
+        ],
+        target: 'map',
+        view: new ol.View({
+          center: [0, 0],
+          zoom: 4
+        })
+      });
+
+      var url = 'http://localhost:63342/etsmap/emissions.geojson';
+      // var url = 'http://localhost:63342/etsmap/website/nederland.geojson';
+      // var url = 'https://openlayers.org/en/v4.0.1/examples/data/geojson/countries.geojson';
+      fetch(url).then(function(response) {
+        return response.json();
+      }).then(function(json) {
+        var tileIndex = geojsonvt(json, {
+          extent: 4096,
+          debug: 1
+        });
+        var vectorSource = new ol.source.VectorTile({
+          format: new ol.format.GeoJSON(),
+          tileGrid: ol.tilegrid.createXYZ(),
+          tilePixelRatio: 16,
+          tileLoadFunction: function(tile) {
+            var format = tile.getFormat();
+            var tileCoord = tile.getTileCoord();
+            var data = tileIndex.getTile(tileCoord[0], tileCoord[1], -tileCoord[2] - 1);
+            // console.log(data);
+
+            var features = format.readFeatures(
+              JSON.stringify({
+                type: 'FeatureCollection',
+                features: data ? data.features : []
+              }, replacer));
+            tile.setLoader(function() {
+              tile.setFeatures(features);
+              tile.setProjection(tilePixels);
+            });
+          },
+          url: 'data:' // arbitrary url, we don't use it in the tileLoadFunction
+        });
+        function lineStyleFunction(feature, resolution) {
+          var lineWidth = feature.get('stroke-width');
+          var lineStyle = new ol.style.Style({
+            stroke: new ol.style.Stroke({
+              color: feature.get('stroke'),
+              width: 2
+            })
+          });
+          return lineStyle;
+        }
+        var vectorLayer = new ol.layer.VectorTile({
+          source: vectorSource,
+          style: lineStyleFunction
+        });
+        map.addLayer(vectorLayer);
+      });
+    </script>
+  </body>
+</html>
