@@ -16,12 +16,12 @@ class TestCountour(unittest.TestCase):
 
     def test_create_contour(self):
         config = vis.emissioncontour.ContourPlotConfig()
-        sources = enipedia.euets.get_all_sources_from_file(year=self.YEAR)
+        # sources = enipedia.euets.get_all_sources_from_file(year=self.YEAR)
+        sources = enipedia.euets.get_sources_from_file(country_code='NL', year=self.YEAR)
         contour = vis.emissioncontour.Contour(emission_sources=sources, config=config)
-        # contour.create_contour_data()
-        # contour.save()
-
-        contour.load()
+        contour.create_contour_data()
+        contour.save()
+        # contour.load()
         level_upper = contour.Z.max()
         level_lower = contour.Z.min()
         print(level_upper)
