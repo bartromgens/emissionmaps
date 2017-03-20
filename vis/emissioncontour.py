@@ -22,22 +22,21 @@ class ContourPlotConfig(object):
 
     def __init__(self):
         self.bound_box_filepath = 'bounding_box.geojson'
-        self.stepsize_deg = 0.02
+        self.stepsize_deg = 0.04
         self.n_nearest = 40
         # self.lon_start = -10
         # self.lat_start = 35
         # self.delta_deg = 40
-        self.lon_start = 4
-        self.lat_start = 50
-        self.delta_deg = 5
+        self.lon_start = 3.5
+        self.lat_start = 45
+        self.delta_deg = 10
         self.lon_end = self.lon_start + self.delta_deg
         self.lat_end = self.lat_start + self.delta_deg
         self.min_angle_between_segments = 7
 
 
 class Contour(object):
-    alpha_deg = 5
-    alpha_rad = alpha_deg * math.pi / 180
+    cone_radius = 8000
 
     def __init__(self, emission_sources, config, data_dir=None):
         self.emission_sources = emission_sources
@@ -56,11 +55,14 @@ class Contour(object):
             numpy.save(fileout, self.Z)
 
     @staticmethod
-    def get_emission_cone_width_height(volume, alpha_rad):
-        tan_alpha = math.tan(alpha_rad)
-        width = math.pow((3*volume) / (math.pi*tan_alpha), 1/3)
-        height = tan_alpha * width
-        return width, height
+    def get_emission_cone_height(volume):
+        height = (3*volume) / (math.pi*Contour.cone_radius*Contour.cone_radius)
+        return height
+
+    @staticmethod
+    def get_emission_bell_height(volume):
+        height = volume / (2*math.pi*Contour.cone_radius*Contour.cone_radius)
+        return height
 
     def create_contour_data(self, filepath=None):
         numpy.set_printoptions(3, threshold=100, suppress=True)  # .3f
@@ -74,11 +76,11 @@ class Contour(object):
             if not source['latitude'] or not source['longitude']:
                 # print('no location data available: skip!')
                 continue
-            if source['emissions_calculated'] < 5000:
+            if source['emissions_calculated'] < 10000:
                 continue
-            emission_tons = source['emissions_calculated']
-            width, height = Contour.get_emission_cone_width_height(emission_tons * 1e6, self.alpha_rad)
-            source['width'] = width
+            emission_tons = source['emissions_calculated'] * 1e6
+            height = Contour.get_emission_cone_height(emission_tons)
+            source['height'] = height
             x, y, z = gps.lla2ecef([source['latitude'], source['longitude'], altitude])
             positions.append([x, y, z])
             emission_sources.append(source)
@@ -110,15 +112,16 @@ class Contour(object):
                 print((str(int(i / len(latrange) * 100)) + '%'))
             for j, lon in enumerate(lonrange):
                 x, y, z = gps.lla2ecef([lat, lon, altitude])
-                local_emission_per_square_m = 0.0
+                local_emission = 0.0
                 distances, indexes = kdtree.query([x, y, z], n_nearest)
                 for distance, index in zip(distances, indexes):
                     if distance < 1:
                         continue
-                    if distance < sources[index]['width']:
-                        local_emission_per_square_m += (sources[index]['width']-distance)*math.tan(Contour.alpha_rad)
+                    # if distance < Contour.cone_radius:
+                    #     local_emission += (Contour.cone_radius-distance)*sources[index]['height']/Contour.cone_radius
+                    local_emission += sources[index]['emissions_calculated'] * math.exp(-(distance*distance)/(2*Contour.cone_radius*Contour.cone_radius))
                 # print('local emission: ' + str(local_emission_per_square_m))
-                Z[i][j] = local_emission_per_square_m
+                Z[i][j] = local_emission
         return Z
 
     def create_contour_plot(self, levels, norm=None):
@@ -159,13 +162,13 @@ class Contour(object):
             unit='min',
             stroke_width=stroke_width
         )
-        with open(filepath, 'r') as jsonfile:
-            feature_collection = geojson.load(jsonfile)
-            for feature in feature_collection['features']:
-                feature["tippecanoe"] = {"maxzoom": str(int(max_zoom)), "minzoom": str(int(min_zoom))}
-        dump = geojson.dumps(feature_collection, sort_keys=True)
-        with open(filepath, 'w') as fileout:
-            fileout.write(dump)
+        # with open(filepath, 'r') as jsonfile:
+        #     feature_collection = geojson.load(jsonfile)
+        #     for feature in feature_collection['features']:
+        #         feature["tippecanoe"] = {"maxzoom": str(int(max_zoom)), "minzoom": str(int(min_zoom))}
+        # dump = geojson.dumps(feature_collection, sort_keys=True)
+        # with open(filepath, 'w') as fileout:
+        #     fileout.write(dump)
 
         # cbar = figure.colorbar(contours, format='%d', orientation='horizontal')
         # cbar.set_label('Travel time [minutes]')
